@@ -1,0 +1,2 @@
+smart-open==1.8.3
+canvas-data-sdk==0.1.4

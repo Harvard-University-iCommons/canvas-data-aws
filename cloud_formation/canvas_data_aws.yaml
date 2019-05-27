@@ -1,0 +1,215 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  This template creates AWS resources necessary to retrieve and store Canvas Data extracts. It also creates a Glue data catalog.
+
+Parameters:
+  EnvironmentParameter:
+    Type: String
+    Default: prod
+    Description: The environment name.
+    AllowedValues: [dev, qa, prod]
+  LambdaFunctionZipFileNameParameter:
+    Type: String
+    Default: "canvas-data-lambda-05272019-173758.zip"
+    Description: The name of the Lambda function package zip file. If you've packaged your own version of the functions, replace this with your own zip file name.
+  LambdaFunctionBucketParameter:
+    Type: String
+    Default: "huit-at-public-build-artifacts"
+    Description: The S3 bucket where the Lambda function package is stored. If you've packaged your own version of the functions, replace this with your own bucket name.
+  ApiKeyParameter:
+    Type: String
+    Description: Your Canvas Data API Key
+  ApiSecretParameter:
+    Type: String
+    Description: Your Canvas Data API Secret
+
+Resources:
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join
+        - "-"
+        - - "canvas-data-warehouse"
+          - !Ref AWS::AccountId
+          - !Ref EnvironmentParameter
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Join ["_", ["canvasdata", !Ref EnvironmentParameter]]
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Join ["-", ["canvas-data-sync", !Ref EnvironmentParameter]]
+
+  FetchLambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ["-", ["canvas-data-fetch-lambda-role", !Ref EnvironmentParameter]]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: !Join ["-", ["canvas-data-fetch-lambda-policy", !Ref EnvironmentParameter]]
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                Resource: !GetAtt S3Bucket.Arn
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                  - "s3:DeleteObject"
+                Resource: !Join ["/", [!GetAtt S3Bucket.Arn, "*"]]
+
+  FetchLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "Lambda function that fetches a file from a URL and stores it in an S3 bucket"
+      FunctionName: !Join ["-", ["canvas-data-fetch", !Ref EnvironmentParameter]]
+      Handler: "fetch-canvas-data-file.lambda_handler"
+      Role: !GetAtt FetchLambdaFunctionRole.Arn
+      Runtime: "python3.7"
+      Environment:
+        Variables:
+          ENV : !Ref EnvironmentParameter
+      MemorySize: "256"
+      Timeout: "600"
+      Code:
+        S3Bucket: !Ref LambdaFunctionBucketParameter
+        S3Key: !Ref LambdaFunctionZipFileNameParameter
+
+  SyncLambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ["-", ["canvas-data-sync-lambda-role", !Ref EnvironmentParameter]]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: !Join ["-", ["uw-canvas-data-sync-lambda-policy", !Ref EnvironmentParameter]]
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "glue:GetResoucePolicy"
+                Resource: !Join
+                  - ":"
+                  - - "arn:aws:glue"
+                    - !Ref AWS::Region
+                    - !Ref AWS::AccountId
+                    - "catalog/*"
+              -
+                Effect: "Allow"
+                Action:
+                  - "glue:Get*"
+                  - "glue:CreateTable"
+                  - "glue:UpdateTable"
+                Resource: "*"
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                Resource: !GetAtt S3Bucket.Arn
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                  - "s3:DeleteObject"
+                Resource: !Join ["/", [!GetAtt S3Bucket.Arn, "*"]]
+              -
+                Effect: "Allow"
+                Action: "sns:Publish"
+                Resource: !Ref SNSTopic
+              -
+                Effect: "Allow"
+                Action:
+                  - "lambda:InvokeFunction"
+                  - "lambda:InvokeAsync"
+                Resource: !Join
+                  - ":"
+                  - - "arn:aws:lambda"
+                    - !Ref AWS::Region
+                    - !Ref AWS::AccountId
+                    - "function:canvas-data-*"
+
+  SyncLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "Lambda function that synchronizes Canvas Data files with a local archive"
+      FunctionName: !Join ["-", ["canvas-data-sync", !Ref EnvironmentParameter]]
+      Handler: "sync-canvas-data-files.lambda_handler"
+      Role: !GetAtt SyncLambdaFunctionRole.Arn
+      Runtime: "python3.7"
+      Environment:
+        Variables:
+          ENV : !Ref EnvironmentParameter
+          api_key: !Ref ApiKeyParameter
+          api_secret: !Ref ApiSecretParameter
+          fetch_function_name: !Ref FetchLambdaFunction
+          s3_bucket: !Ref S3Bucket
+          sns_topic: !Ref SNSTopic
+          database_name: !Ref GlueDatabase
+      MemorySize: "512"
+      Timeout: "900"
+      Code:
+        S3Bucket: !Ref LambdaFunctionBucketParameter
+        S3Key: !Ref LambdaFunctionZipFileNameParameter
+
+  CloudwatchEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: runs every day at 10am UTC
+      Name: !Join ["-", ["canvas-data-sync-schedule", !Ref EnvironmentParameter]]
+      ScheduleExpression: "cron(0 10 * * ? *)"
+      Targets:
+        - Arn: !GetAtt SyncLambdaFunction.Arn
+          Id: !Join ["-", ["canvas-data-sync-sched-target", !Ref EnvironmentParameter]]
+
+  SyncLambdaFuctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt SyncLambdaFunction.Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt CloudwatchEventRule.Arn
