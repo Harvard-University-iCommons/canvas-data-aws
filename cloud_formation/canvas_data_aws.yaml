@@ -10,10 +10,10 @@ Parameters:
     Default: prod
     Description: The environment name.
     AllowedValues: [dev, qa, prod]
-  LambdaFunctionZipFileNameParameter:
+  LambdaFunctionZipFileKeyParameter:
     Type: String
-    Default: "canvas-data-lambda-05272019-173758.zip"
-    Description: The name of the Lambda function package zip file. If you've packaged your own version of the functions, replace this with your own zip file name.
+    Default: "canvas-data-aws/canvas-data-lambda-05272019-173758.zip"
+    Description: The S3 key (file path) where the Lambda function package zip file is stored. If you've packaged your own version of the functions, replace this with your own zip file.
   LambdaFunctionBucketParameter:
     Type: String
     Default: "huit-at-public-build-artifacts"
@@ -24,6 +24,9 @@ Parameters:
   ApiSecretParameter:
     Type: String
     Description: Your Canvas Data API Secret
+  EmailAddressParameter:
+    Type: String
+    Description: Your email address. This will be used to send you notifications about the success or failure of the data synchronization process.
 
 Resources:
 
@@ -56,6 +59,13 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       DisplayName: !Join ["-", ["canvas-data-sync", !Ref EnvironmentParameter]]
+
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref EmailAddressParameter
+      Protocol: email
+      TopicArn: !Ref SNSTopic
 
   FetchLambdaFunctionRole:
     Type: AWS::IAM::Role
@@ -106,7 +116,7 @@ Resources:
       Timeout: "600"
       Code:
         S3Bucket: !Ref LambdaFunctionBucketParameter
-        S3Key: !Ref LambdaFunctionZipFileNameParameter
+        S3Key: !Ref LambdaFunctionZipFileKeyParameter
 
   SyncLambdaFunctionRole:
     Type: AWS::IAM::Role
@@ -194,7 +204,7 @@ Resources:
       Timeout: "900"
       Code:
         S3Bucket: !Ref LambdaFunctionBucketParameter
-        S3Key: !Ref LambdaFunctionZipFileNameParameter
+        S3Key: !Ref LambdaFunctionZipFileKeyParameter
 
   CloudwatchEventRule:
     Type: AWS::Events::Rule
