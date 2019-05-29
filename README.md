@@ -1,10 +1,10 @@
 # Canvas Data on AWS
 
-This repository contains artifacts necessary to create a Canvas Data Warehouse on AWS. See the [[tutorial page|tutorial]] for detailed instructions on how to set up your own environment.
+This repository contains artifacts necessary to create a Canvas Data Warehouse on AWS. See the [tutorial page](https://github.com/Harvard-University-iCommons/canvas-data-aws/wiki/Tutorial) for detailed instructions on how to set up your own environment.
 
 ## CloudFormation template
 
-A CloudFormation template, `cloud_formation/canvas_data_aws/yaml` is used to create all of the AWS infrastructure components to build the warehouse (see the template for details).
+A CloudFormation template, `cloud_formation/canvas_data_aws.yaml` is used to create all of the AWS infrastructure components to build the warehouse (see the template for details).
 
 ## Lambda functions
 
