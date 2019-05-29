@@ -1,6 +1,6 @@
 # Canvas Data on AWS
 
-This repository contains artifacts necessary to create a Canvas Data Warehouse on AWS.
+This repository contains artifacts necessary to create a Canvas Data Warehouse on AWS. See the [[tutorial page|tutorial]] for detailed instructions on how to set up your own environment.
 
 ## CloudFormation template
 
