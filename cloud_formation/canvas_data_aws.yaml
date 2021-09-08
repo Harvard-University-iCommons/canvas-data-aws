@@ -24,9 +24,19 @@ Parameters:
   ApiSecretParameter:
     Type: String
     Description: Your Canvas Data API Secret
+  ApiSecretsManagerParameter:
+    Type: String
+    Description: An optional Secrets Manager secret that contains the api_key and api_secret (alternative to ApiKeyParameter and ApiSecretParameter).
+    Default: ""
   EmailAddressParameter:
     Type: String
     Description: Your email address. This will be used to send you notifications about the success or failure of the data synchronization process.
+
+Conditions:
+  HasApiSecretsManager: !And
+    - !Equals [ !Ref ApiKeyParameter, "" ]
+    - !Equals [ !Ref ApiSecretParameter, "" ]
+    - !Not [ !Equals [ !Ref ApiSecretsManagerParameter, "" ] ]
 
 Resources:
 
@@ -182,6 +192,20 @@ Resources:
                     - !Ref AWS::Region
                     - !Ref AWS::AccountId
                     - "function:canvas-data-*"
+  SyncLambdaFunctionSMPolicy:
+    Type: AWS::IAM::Policy
+    Condition: HasApiSecretsManager
+    Properties:
+      Roles:
+        - !Ref SyncLambdaFunctionRole
+      PolicyName: APISecretsManager
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Action: "secretsmanager:GetSecretValue"
+            Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ApiSecretsManagerParameter}-??????"
 
   SyncLambdaFunction:
     Type: AWS::Lambda::Function
@@ -196,6 +220,7 @@ Resources:
           ENV : !Ref EnvironmentParameter
           api_key: !Ref ApiKeyParameter
           api_secret: !Ref ApiSecretParameter
+          api_sm_id: !Ref ApiSecretsManagerParameter
           fetch_function_name: !Ref FetchLambdaFunction
           s3_bucket: !Ref S3Bucket
           sns_topic: !Ref SNSTopic

@@ -14,8 +14,14 @@ def lambda_handler(event, context):
 
     dry_run = True if os.environ.get('dry_run', '').lower() == 'true' else False
 
-    api_key = os.environ['api_key']
-    api_secret = os.environ['api_secret']
+    sm  = boto3.client('secretsmanager')
+    if os.environ.get('api_sm_id'):
+        res = sm.get_secret_value(SecretId=os.environ['api_sm_id'])
+        api_sm = json.loads(res['SecretString'])
+        api_key, api_secret = api_sm['api_key'], api_sm['api_secret']
+    else:
+        api_key = os.environ['api_key']
+        api_secret = os.environ['api_secret']
 
     fetch_function_name = os.environ.get('fetch_function_name')
 
